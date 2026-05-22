@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Scheduly — Smart Timetable Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+<link rel="stylesheet" href="/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+</style>
+</head>
+<body>
+
+<!-- ══ TOPBAR ══ -->
+<header class="topbar">
+  <a href="#" class="logo">
+    <div class="logo-mark"><i class="ti ti-calendar-event"></i></div>
+    <span class="logo-name">Sched<span>uly</span></span>
+  </a>
+  <div class="topbar-gap"></div>
+  <div class="topbar-actions" id="topbarActions">
+    <button class="btn sm success" onclick="window.print()"><i class="ti ti-printer"></i>Print</button>
+    <button class="btn sm" onclick="exportCSV()"><i class="ti ti-download"></i>CSV</button>
+    <div class="theme-pill" onclick="toggleTheme()">
+      <i class="ti ti-moon" id="themeIcon"></i>
+      <div class="track"><div class="thumb"></div></div>
+    </div>
+    <div id="authArea"></div>
+  </div>
+</header>
+
+<!-- ══ APP ══ -->
+<div class="app">
+  <div class="main-tabs">
+    <button class="tab-btn active" onclick="switchTab('builder',this)"><i class="ti ti-layout-grid"></i>Builder</button>
+    <button class="tab-btn" onclick="switchTab('saved',this)"><i class="ti ti-archive"></i>Saved Timetables</button>
+  </div>
+
+  <!-- ══ BUILDER ══ -->
+  <div id="tab-builder" class="tab-panel active">
+    <div class="builder-layout">
+      <div class="sidebar">
+
+        <!-- Classes / Courses -->
+        <div class="card">
+          <div class="card-label"><i class="ti ti-school"></i>Classes / Courses</div>
+          <div class="row-inline" style="margin-bottom:7px">
+            <input type="text" id="classInput" placeholder="e.g. CS101" style="flex:1" onkeydown="if(event.key==='Enter')addClass()"/>
+          </div>
+          <div style="display:flex;gap:7px;margin-bottom:9px">
+            <input type="color" id="classColor" value="#2563EB" title="Pick colour"/>
+            <button class="btn primary" onclick="addClass()" style="flex:1;justify-content:center"><i class="ti ti-plus"></i>Add</button>
+          </div>
+          <div class="chip-list" id="classList"><div class="empty-hint">No courses added yet</div></div>
+        </div>
+
+        <!-- Days -->
+        <div class="card">
+          <div class="card-label"><i class="ti ti-calendar-week"></i>Days of the Week</div>
+          <div id="dayToggles"></div>
+        </div>
+
+        <!-- Times -->
+        <div class="card">
+          <div class="card-label"><i class="ti ti-clock"></i>Available Times</div>
+          <div class="row-inline"><label>From</label><input type="time" id="slotStart" value="08:00"/></div>
+          <div class="row-inline"><label>To</label><input type="time" id="slotEnd" value="18:00"/></div>
+          <div class="row-inline" style="margin-bottom:10px">
+            <label>Slot</label>
+            <select id="slotInterval">
+              <option value="30">30 min</option>
+              <option value="60" selected>1 hour</option>
+              <option value="90">1.5 hrs</option>
+              <option value="120">2 hours</option>
+            </select>
+          </div>
+          <button class="btn primary" onclick="applySlots()" style="width:100%;justify-content:center"><i class="ti ti-refresh"></i>Apply</button>
+        </div>
+
+        <!-- Legend -->
+        <div class="card">
+          <div class="card-label"><i class="ti ti-palette"></i>Legend</div>
+          <div class="legend" id="legend"><span class="empty-hint" style="padding:4px 0">Add a course to see colours</span></div>
+        </div>
+
+        <div id="conflictPanel"></div>
+
+        <!-- Save btn -->
+        <button class="btn primary" id="saveTTBtn" onclick="openSaveModal()" style="width:100%;justify-content:center;display:none">
+          <i class="ti ti-device-floppy"></i>Save Timetable
+        </button>
+      </div>
+
+      <!-- Grid -->
+      <div class="card" style="padding:12px">
+        <div class="tt-scroll"><table id="tt"></table></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SAVED ══ -->
+  <div id="tab-saved" class="tab-panel">
+    <div class="card">
+      <div class="card-label" style="margin-bottom:14px"><i class="ti ti-search"></i>Search Saved Timetables</div>
+      <div class="search-bar">
+        <input type="text" id="searchQ" placeholder="Search by course name…" oninput="renderSaved()"/>
+        <select id="searchProg" onchange="renderSaved()">
+          <option value="">All programme types</option>
+          <option>Regular</option><option>Evening</option><option>Weekend</option>
+          <option>Under-Graduate</option><option>Graduate</option><option>Diploma</option><option>Other</option>
+        </select>
+        <button class="btn sm ghost" onclick="clearSearch()"><i class="ti ti-x"></i>Clear</button>
+      </div>
+      <div id="savedList"><div class="no-results"><i class="ti ti-loader"></i>Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONTEXT MENU ══ -->
+<div id="ctxMenu" class="ctx-menu" style="display:none">
+  <div class="ctx-item" onclick="ctxEdit()"><i class="ti ti-pencil"></i>Edit session</div>
+  <div class="ctx-item danger" onclick="ctxUnassign()"><i class="ti ti-eraser"></i>Unassign slot</div>
+</div>
+
+<!-- ══ ASSIGN MODAL ══ -->
+<div id="assignBg" class="modal-bg" style="display:none" onclick="if(event.target===this)closeAssign()">
+  <div class="modal">
+    <div class="modal-h"><i class="ti ti-calendar-plus"></i><span id="assignTitle">Assign Session</span></div>
+    <div class="field">
+      <label>Class / Course</label>
+      <select id="aClass"></select>
+    </div>
+    <div class="field">
+      <label>Duration (slots)</label>
+      <select id="aDur">
+        <option value="1">1 slot</option><option value="2">2 slots</option>
+        <option value="3">3 slots</option><option value="4">4 slots</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeAssign()">Cancel</button>
+      <button class="btn primary" onclick="assignSession()"><i class="ti ti-check"></i>Assign</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SAVE MODAL ══ -->
+<div id="saveBg" class="modal-bg" style="display:none" onclick="if(event.target===this)closeSave()">
+  <div class="modal">
+    <div class="modal-h"><i class="ti ti-device-floppy"></i>Save Timetable</div>
+
+    <div class="field">
+      <label>Course Name *</label>
+      <input type="text" id="sCourse" placeholder="e.g. BSc Information Technology Education"/>
+    </div>
+
+    <div class="field">
+      <label>Programme Type *</label>
+      <select id="sProgType" onchange="updateSaveConds()">
+        <option value="">— Select —</option>
+        <option>Regular</option><option>Evening</option><option>Weekend</option>
+        <option>Under-Graduate</option><option>Graduate</option><option>Diploma</option><option>Other</option>
+      </select>
+    </div>
+
+    <div class="cond field" id="cLevel">
+      <label>Level</label>
+      <select id="sLevel"><option value="100">Level 100</option><option value="200">Level 200</option><option value="300">Level 300</option><option value="400">Level 400</option></select>
+    </div>
+    <div class="cond field" id="cGrad">
+      <label>Graduate Programme</label>
+      <select id="sGradProg"><option>MPhil</option><option>PhD</option><option>MBA</option><option>MEd</option><option>MSc</option><option>MA</option><option>LLM</option><option>Other</option></select>
+    </div>
+    <div class="cond field" id="cOther">
+      <label>Specify</label>
+      <input type="text" id="sOtherSpec" placeholder="e.g. HND, Certificate, Sandwich…"/>
+    </div>
+
+    <div class="field">
+      <label>Notes (optional)</label>
+      <textarea id="sNotes" placeholder="Any additional info…"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeSave()">Cancel</button>
+      <button class="btn primary" onclick="confirmSave()"><i class="ti ti-device-floppy"></i>Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ VIEW MODAL ══ -->
+<div id="viewBg" class="modal-bg" style="display:none" onclick="if(event.target===this)closeView()">
+  <div class="modal" style="max-width:94vw;width:auto;min-width:320px">
+    <div class="modal-h"><i class="ti ti-calendar"></i><span id="viewTitle"></span></div>
+    <div id="viewMeta" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text2)"></div>
+    <div class="tt-scroll" style="max-height:60vh;overflow:auto"><table id="viewTable" style="min-width:320px"></table></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeView()">Close</button>
+      <button class="btn sm" id="viewLoadBtn" onclick="loadFromView()"><i class="ti ti-pencil"></i>Load & Edit</button>
+      <button class="btn sm danger" id="viewDelBtn" onclick="deleteViewed()"><i class="ti ti-trash"></i>Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ AUTH OVERLAY ══ -->
+<div id="authOverlay" class="auth-overlay" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="mark"><i class="ti ti-calendar-event"></i></div>
+      <div class="name">Sched<span>uly</span></div>
+    </div>
+    <p class="auth-sub">Sign in to save and manage timetables</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchAuthTab('login',this)">Sign In</button>
+      <button class="auth-tab" onclick="switchAuthTab('signup',this)">Create Account</button>
+    </div>
+    <div class="auth-error" id="authErr"></div>
+
+    <div id="authLogin">
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"/></div>
+      <div class="field"><label>Password</label><input type="password" id="loginPass" placeholder="••••••••"/></div>
+      <button class="btn primary" onclick="doLogin()" style="width:100%;justify-content:center;margin-top:4px">Sign In</button>
+    </div>
+
+    <div id="authSignup" style="display:none">
+      <div class="field"><label>Full Name</label><input type="text" id="signupName" placeholder="Your name"/></div>
+      <div class="field"><label>Email</label><input type="email" id="signupEmail" placeholder="you@example.com"/></div>
+      <div class="field"><label>Password</label><input type="password" id="signupPass" placeholder="Min. 6 characters"/></div>
+      <button class="btn primary" onclick="doSignup()" style="width:100%;justify-content:center;margin-top:4px">Create Account</button>
+    </div>
+
+    <button class="btn ghost" onclick="closeAuth()" style="width:100%;justify-content:center;margin-top:8px">
+      <i class="ti ti-eye"></i>Continue as Guest (view only)
+    </button>
+  </div>
+</div>
+<script src="/script.js"></script>
+</body>
+</html>
